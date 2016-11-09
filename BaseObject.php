@@ -33,7 +33,6 @@ class BaseObject
      */
     const TYPES = ['int' => 'integer', 'bool' => 'boolean', 'float' => 'double'];
 
-
     /**
      * @param string $key
      * @return mixed
@@ -172,6 +171,32 @@ class BaseObject
         } else {
             return false;
         }
+    }
+
+    /**
+     * Creates array of all readable properties.
+     *
+     * @return array
+     */
+    public function toArray() : array
+    {
+        $array = [];
+        foreach ($this as $key => $value) {
+            if ($this->hasReadAccess($key)) {
+                $array[$key] = $value;
+            }
+        }
+        return $array;
+    }
+
+    /**
+     * Creates json of all readebla properties.
+     *
+     * @return string
+     */
+    public function toJson() : string
+    {
+        return json_encode($this->toArray());
     }
 
 }
