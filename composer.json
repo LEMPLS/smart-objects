@@ -1,0 +1,10 @@
+{
+    "name": "lempls/smart-objects",
+    "description": "Little helpful classes for lempls projects.",
+    "type": "library",
+    "require": {
+        "php": "^7.0",
+        "phpdocumentor/reflection-docblock": "^3.1"
+    },
+    "minimum-stability": "stable"
+}
