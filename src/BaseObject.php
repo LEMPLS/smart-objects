@@ -190,7 +190,7 @@ class BaseObject
     }
 
     /**
-     * Creates json of all readebla properties.
+     * Creates json of all readable properties.
      *
      * @return string
      */
