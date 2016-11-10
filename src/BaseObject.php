@@ -17,6 +17,7 @@ use phpDocumentor\Reflection\Types\Mixed;
 use phpDocumentor\Reflection\Types\Object_;
 
 
+
 class BaseObject
 {
 
@@ -84,6 +85,63 @@ class BaseObject
                 throw new Exceptions\WrongTypeException('Property received different value then type-hinted');
             }
             return;
+        } else {
+            throw new Exceptions\InvalidAccessException('Invalid access');
+        }
+    }
+
+    public function __call($name, $args)
+    {
+        list($prefix, $name) = $this->methodToPropertyName($name);
+        switch ($prefix) {
+            case 'set': $this->__set($name, $args[0]); break;
+            case 'get': case 'is': $this->__get($name); break;
+            case 'has': $this->__isset($name); break;
+            case 'add':
+                if ($this->$name instanceof Doctrine\Common\Collections\ArrayCollection || gettype($this->$name) === 'array') {
+                    $this->$name[] = $args[0];
+                };
+             break;
+            case 'rem':
+                if ($this->$name instanceof Doctrine\Common\Collections\ArrayCollection || gettype($this->$name) === 'array') {
+                    $this->$name->removeElement($args[0]);
+                };
+             break;
+            
+        }
+
+    }
+
+
+    private function methodToPropertyName($method)
+    {
+        $prefixes = ['set','get','is','has','add','rem'];
+        foreach ($prefixes as $prefix) {
+            if (strpos($method, $prefix) === 0 && strlen($method) > strlen($prefix)) {
+                $name = substr($method, strlen($prefix)-1);
+                $words = preg_split('/(?=[A-Z])/', $name);
+                if(!isset($words[0])) return false;
+
+                $name = implode('_', $words);
+
+
+                return [$prefix, $name];
+            }
+        }
+    }
+
+    /**
+     * Magic isset
+     *
+     * @param $key
+     * @return bool
+     * @throws Exceptions\InvalidAccessException
+     */
+    public function __isset($key)
+    {
+        if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
+        if ($this->hasReadAccess($key) || $this->hasWriteAccess($key)) {
+            return isset($this->$key);
         } else {
             throw new Exceptions\InvalidAccessException('Invalid access');
         }
