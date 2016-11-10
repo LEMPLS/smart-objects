@@ -38,9 +38,14 @@ class BaseObject
      * @return mixed
      * @throws Exceptions\InvalidAccessException In case of property being protected
      */
-    public function __get(string $key)
+    public function __get($key)
     {
+        if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
         if ($this->hasReadAccess($key)) {
+            $getter = $this->getGetter($key);
+            if ($getter !== false) {
+                return $this->$getter();
+            }
             return $this->$key;
         } else {
             throw new Exceptions\InvalidAccessException('Invalid access');
@@ -53,15 +58,21 @@ class BaseObject
      * @throws Exceptions\InvalidAccessException In case of property being protected
      * @throws Exceptions\WrongTypeException In case of trying to pass different value then type-hinted
      */
-    public function __set(string $key, $value)
+    public function __set($key, $value)
     {
+        if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
         if ($this->hasWriteAccess($key)) {
+            $setter = $this->getSetter($key);
+            if ($setter != null) {
+                $this->$setter($value);
+                return;
+            }
             $annotation = $this->readAnnotation($key, 'var');
             if ($annotation === false) {
                 $this->$key = $value;
                 return;
             }
-                $type = $this->readAnnotation($key, 'var')->getType();
+            $type = $this->readAnnotation($key, 'var')->getType();
             if ($type instanceof \phpDocumentor\Reflection\Types\Compound) {
                 foreach ($this->compoundToArray($type) as $t) {
                     if ($this->setVerifiedProperty($key, $value, $t)) {
@@ -110,7 +121,10 @@ class BaseObject
      */
     private function hasReadAccess(string $key) : bool
     {
-        $access = $this->readAnnotation($key, 'access')->getDescription()->render();
+        $tag = $this->readAnnotation($key, 'access');
+        if ($tag == null) return true;
+
+        $access = $tag->getDescription()->render();
 
         return $access == self::ACCESS_READ_ONLY || $access == self::ACCESS_PUBLIC;
     }
@@ -121,7 +135,10 @@ class BaseObject
      */
     private function hasWriteAccess(string $key) : bool
     {
-        $access = $this->readAnnotation($key, 'access')->getDescription()->render();
+        $tag = $this->readAnnotation($key, 'access');
+        if ($tag == null) return true;
+
+        $access = $tag->getDescription()->render();
 
         return $access == self::ACCESS_WRITE_ONLY || $access == self::ACCESS_PUBLIC;
     }
@@ -131,10 +148,10 @@ class BaseObject
      * @param string $annotation
      * @return false|\phpDocumentor\Reflection\DocBlock\Tag
      */
-    private function readAnnotation(string $property, string $annotation)
+    protected function readAnnotation(string $property, string $annotation)
     {
         $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
-        $docblock = $factory->create(new \ReflectionProperty(self::class, $property));
+        $docblock = $factory->create(new \ReflectionProperty($this->getClass(), $property));
         $tag = $docblock->getTagsByName($annotation);
         if (count($tag) == 0 || !isset($tag[0])) return false;
         return $tag[0];
@@ -176,14 +193,18 @@ class BaseObject
     /**
      * Creates array of all readable properties.
      *
+     * @param array $exclude List of all excluded properties
      * @return array
      */
-    public function toArray() : array
+    public function toArray($exclude = []) : array
     {
         $array = [];
         foreach ($this as $key => $value) {
-            if ($this->hasReadAccess($key)) {
-                $array[$key] = $value;
+            if (!in_array($key, $exclude)) {
+
+                if ($this->hasReadAccess($key)) {
+                    $array[$key] = $this->__get($key);
+                }
             }
         }
         return $array;
@@ -192,11 +213,47 @@ class BaseObject
     /**
      * Creates json of all readable properties.
      *
+     * @param array $exclude List of all excluded properties
      * @return string
      */
-    public function toJson() : string
+    public function toJson($exclude = []) : string
     {
-        return json_encode($this->toArray());
+        return json_encode($this->toArray($exclude));
+    }
+
+    /**
+     * If class has implementer property setter, we will use it
+     *
+     * @param string $property
+     * @return bool|string
+     */
+    public function getSetter(string $property)
+    {
+        $method = 'set' . str_replace('_', '', ucwords($property, '_'));
+        if (method_exists($this, $method)) {
+            return $method;
+        }
+        return false;
+    }
+
+    /**
+     * If class has implementer property getter, we will use it
+     *
+     * @param string $property
+     * @return bool|string
+     */
+    public function getGetter(string $property)
+    {
+        $method = 'get' . str_replace('_', '', ucwords($property, '_'));
+        if (method_exists($this, $method)) {
+            return $method;
+        }
+        return false;
+    }
+
+    public function getClass()
+    {
+        return get_called_class();
     }
 
 }
