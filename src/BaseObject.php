@@ -34,6 +34,7 @@ class BaseObject
      */
     const TYPES = ['int' => 'integer', 'bool' => 'boolean', 'float' => 'double'];
 
+
     /**
      * @param string $key
      * @return mixed
@@ -41,17 +42,23 @@ class BaseObject
      */
     public function __get($key)
     {
-        if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
-        if ($this->hasReadAccess($key)) {
-            $getter = $this->getGetter($key);
-            if ($getter !== false) {
-                return $this->$getter();
+        if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string, ' . gettype($key) . 'given.'); // Stupid instead of typehint, ensures compatability with doctrine proxies
+        $getter = $this->getGetter($key);
+        if ($getter) {
+            return $this->$getter();
+        } elseif ($this->propertyExists($key)) {
+            if ($this->hasReadAccess($key)) {
+                return $this->$key;
+            } else {
+                throw new Exceptions\InvalidAccessException('Tried accessing protected property ' . $key . '.');
             }
-            return $this->$key;
         } else {
-            throw new Exceptions\InvalidAccessException('Invalid access');
+            throw new Exceptions\InvalidAccessException('Tried accessing non-existing property ' . $key . '.');
         }
     }
+
+
+
 
     /**
      * @param string $key
@@ -62,31 +69,33 @@ class BaseObject
     public function __set($key, $value)
     {
         if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
-        if ($this->hasWriteAccess($key)) {
-            $setter = $this->getSetter($key);
-            if ($setter != null) {
-                $this->$setter($value);
-                return;
-            }
-            $annotation = $this->readAnnotation($key, 'var');
-            if ($annotation === false) {
-                $this->$key = $value;
-                return;
-            }
-            $type = $this->readAnnotation($key, 'var')->getType();
-            if ($type instanceof \phpDocumentor\Reflection\Types\Compound) {
-                foreach ($this->compoundToArray($type) as $t) {
-                    if ($this->setVerifiedProperty($key, $value, $t)) {
-                        return;
-                    }
+        $setter = $this->getSetter($key);
+        if ($setter) {
+            $this->$setter($value);
+        } elseif ($this->propertyExists($key)) {
+            if ($this->hasWriteAccess($key)) {
+
+                $annotation = $this->readAnnotation($key, 'var');
+                if ($annotation === false) {
+                    $this->$key = $value;
+                    return;
                 }
-                throw new Exceptions\WrongTypeException('Property received different value then type-hinted');
-            } else if (!$this->setVerifiedProperty($key, $value, $type)) {
-                throw new Exceptions\WrongTypeException('Property received different value then type-hinted');
+
+                $type = $this->readAnnotation($key, 'var')->getType();
+                if ($type instanceof \phpDocumentor\Reflection\Types\Compound) {
+                    foreach ($this->compoundToArray($type) as $t) {
+                        if ($this->setVerifiedProperty($key, $value, $t)) {
+                            return;
+                        }
+                    }
+                    throw new Exceptions\WrongTypeException('Property' . $key . 'received ' . gettype($value) . ' instead of one of type-hinted');
+                } else if (!$this->setVerifiedProperty($key, $value, $type)) {
+                    throw new Exceptions\WrongTypeException('Property' . $key . 'received ' . gettype($value) . ' instead of type-hinted' . $type);
+                }
+                return;
+            } else {
+                throw new Exceptions\InvalidAccessException('Invalid access to ' . $key);
             }
-            return;
-        } else {
-            throw new Exceptions\InvalidAccessException('Invalid access');
         }
     }
 
@@ -101,13 +110,13 @@ class BaseObject
                 if ($this->$name instanceof Doctrine\Common\Collections\ArrayCollection || gettype($this->$name) === 'array') {
                     $this->$name[] = $args[0];
                 };
-             break;
+                break;
             case 'rem':
                 if ($this->$name instanceof Doctrine\Common\Collections\ArrayCollection || gettype($this->$name) === 'array') {
                     $this->$name->removeElement($args[0]);
                 };
-             break;
-            
+                break;
+
         }
 
     }
@@ -118,14 +127,13 @@ class BaseObject
         $prefixes = ['set','get','is','has','add','rem'];
         foreach ($prefixes as $prefix) {
             if (strpos($method, $prefix) === 0 && strlen($method) > strlen($prefix)) {
-                $name = substr($method, strlen($prefix)-1);
+                $name = substr($method, strlen($prefix));
                 $words = preg_split('/(?=[A-Z])/', $name);
                 if(!isset($words[0])) return false;
-
+                unset($words[0]);
                 $name = implode('_', $words);
 
-
-                return [$prefix, $name];
+                return [$prefix, lcfirst($name)];
             }
         }
     }
@@ -140,10 +148,16 @@ class BaseObject
     public function __isset($key)
     {
         if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
-        if ($this->hasReadAccess($key) || $this->hasWriteAccess($key)) {
-            return isset($this->$key);
+        if($this->getGetter($key) || $this->getSetter($key)) {
+            return true;
+        } elseif ($this->propertyExists($key)) {
+            if ($this->hasReadAccess($key) || $this->hasWriteAccess($key)) {
+                return true;
+            } else {
+                return false;
+            }
         } else {
-            throw new Exceptions\InvalidAccessException('Invalid access');
+            return false;
         }
     }
 
@@ -179,12 +193,17 @@ class BaseObject
      */
     private function hasReadAccess(string $key) : bool
     {
-        $tag = $this->readAnnotation($key, 'access');
-        if ($tag == null) return true;
+        if (property_exists($this, $key)) {
+            $tag = $this->readAnnotation($key, 'access');
+            if ($tag == null) return true;
 
-        $access = $tag->getDescription()->render();
+            $access = $tag->getDescription()->render();
 
-        return $access == self::ACCESS_READ_ONLY || $access == self::ACCESS_PUBLIC;
+            return $access == self::ACCESS_READ_ONLY || $access == self::ACCESS_PUBLIC;
+        }
+        else {
+            return false;
+        }
     }
 
     /**
@@ -193,12 +212,17 @@ class BaseObject
      */
     private function hasWriteAccess(string $key) : bool
     {
-        $tag = $this->readAnnotation($key, 'access');
-        if ($tag == null) return true;
+        if (property_exists($this, $key)) {
+            $tag = $this->readAnnotation($key, 'access');
+            if ($tag == null) return true;
 
-        $access = $tag->getDescription()->render();
+            $access = $tag->getDescription()->render();
 
-        return $access == self::ACCESS_WRITE_ONLY || $access == self::ACCESS_PUBLIC;
+            return $access == self::ACCESS_WRITE_ONLY || $access == self::ACCESS_PUBLIC;
+        }
+        else {
+            return false;
+        }
     }
 
     /**
@@ -287,9 +311,16 @@ class BaseObject
      */
     public function getSetter(string $property)
     {
-        $method = 'set' . str_replace('_', '', ucwords($property, '_'));
-        if (method_exists($this, $method)) {
-            return $method;
+        try {
+            if ($this->propertyExists($property)) {
+                if (!$this->hasWriteAccess($property)) return false;
+            }
+        } catch (\InvalidArgumentException $e) {
+
+        };
+        $method = ucfirst($this->camelize($property));
+        if (method_exists($this, 'set' . $method)) {
+            return 'set' . $method;
         }
         return false;
     }
@@ -302,9 +333,18 @@ class BaseObject
      */
     public function getGetter(string $property)
     {
-        $method = 'get' . str_replace('_', '', ucwords($property, '_'));
-        if (method_exists($this, $method)) {
-            return $method;
+        try {
+            if ($this->propertyExists($property)) {
+                if (!$this->hasReadAccess($property)) return false;
+            }
+        } catch (\InvalidArgumentException $e) {
+
+        };
+        $method = ucfirst($this->camelize($property));
+        if (method_exists($this, 'get' . $method)) {
+            return 'get' . $method;
+        } elseif (method_exists($this, 'is' . $method)) {
+            return 'is' . $method;
         }
         return false;
     }
@@ -312,6 +352,29 @@ class BaseObject
     public function getClass()
     {
         return get_called_class();
+    }
+
+    private function propertyExists($property)
+    {
+        if (property_exists($this->getClass(), $property)) {
+            return true;
+        } elseif (property_exists($this->getClass(), $this->decamelize($property))) {
+            throw new \InvalidArgumentException('Property ' . $property . ' must be in snake_case. (Hint: use ' . $this->decamelize($property) . ' ;) )');
+        } else {
+            throw new \InvalidArgumentException('Property ' . $property . ' not found.');
+        }
+    }
+
+    private function decamelize($word) {
+        return strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $word));
+    }
+
+    private function camelize($word) {
+        return $word = preg_replace_callback(
+            "/(^|_)([a-z])/",
+            function($m) { return strtoupper("$m[2]"); },
+            $word
+        );
     }
 
 }
