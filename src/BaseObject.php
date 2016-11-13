@@ -15,7 +15,10 @@ use phpDocumentor\Reflection\Type;
 use phpDocumentor\Reflection\Types\Compound;
 use phpDocumentor\Reflection\Types\Mixed;
 use phpDocumentor\Reflection\Types\Object_;
-
+use PhpParser\Error;
+use PhpParser\Node\Stmt\Class_;
+use PhpParser\Node\Stmt\Namespace_;
+use PhpParser\ParserFactory;
 
 
 class BaseObject
@@ -233,7 +236,9 @@ class BaseObject
     protected function readAnnotation(string $property, string $annotation)
     {
         $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
-        $docblock = $factory->create(new \ReflectionProperty($this->getClass(), $property));
+        $reflectionProperty = new \ReflectionProperty($this->getClass(), $property);
+        if($reflectionProperty->getDocComment() == false) return false;
+        $docblock = $factory->create($reflectionProperty->getDocComment());
         $tag = $docblock->getTagsByName($annotation);
         if (count($tag) == 0 || !isset($tag[0])) return false;
         return $tag[0];
@@ -375,6 +380,189 @@ class BaseObject
             function($m) { return strtoupper("$m[2]"); },
             $word
         );
+    }
+
+    private function prepareDoc()
+    {
+        $class = new \ReflectionClass(get_called_class());
+        $properties = [];
+
+        foreach ($class->getProperties() as $property) {
+            if (!$property->isPrivate()) {
+                $p = ['name' => $property->getName(), 'type' => null];
+                if ($this->hasReadAccess($property->getName())) {
+                    $p['read'] = true;
+                }
+                if ($this->hasWriteAccess($property->getName())) {
+                    $p['write'] = true;
+                }
+                if ($this->readAnnotation($property->getName(), 'var') !== false) {
+                    $p['type'] = $this->readAnnotation($property->getName(), 'var');
+                }
+                $properties[] = $p;
+            }
+        }
+
+        foreach ($class->getMethods() as $method) {
+            $computed_property = $this->methodToPropertyName($method->getName());
+            if ($computed_property !== null && !$method->isPrivate()) {
+                $p = ['name' => $computed_property[1], 'type' => null];
+                $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
+                if ($method->getDocComment() !== false) { //try to read @var on setter/getter
+                    $docblock = $factory->create($method->getDocComment());
+                    $tag = $docblock->getTagsByName('var');
+                    if (count($tag) !== 0 && isset($tag[0])) {
+                        $p['type'] = $tag[0];
+                    }
+                }
+
+                if ($computed_property[0] == 'get' || $computed_property[0] == 'is') {
+                    $rf = $this->recursiveFind($computed_property[1], $properties, 'name');
+                    if ($rf === false) {
+                        $p['read'] = true;
+                        $reflectionType = $method->getReturnType();
+                        if($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                    } else {
+                        $properties[$rf]['read'] = true;
+                        continue;
+                    }
+                }
+                if ($computed_property[0] == 'set') {
+                    $rf = $this->recursiveFind($computed_property[1], $properties, 'name');
+                    if ($rf === false) {
+                        $p['write'] = true;
+                        $reflectionType = $method->getParameters()[0]->getType();
+                        if($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                    } else {
+                        $properties[$rf]['write'] = true;
+                        continue;
+                    }
+                }
+                $properties[] = $p;
+            }
+        }
+
+        return $properties;
+
+//        foreach ($properties as $property) {
+//            if (isset($property['read']) && isset($property['write'])) {
+//                echo '@property ' . $property['type'] . ' $' . $property['name'] . '<br>';
+//            } elseif (isset($property['read'])) {
+//                echo '@property-read ' . $property['type'] . ' $' . $property['name'] . '<br>';
+//            } elseif (isset($property['write'])) {
+//                echo '@property-write ' . $property['type'] . ' $' . $property['name'] . '<br>';
+//            }
+//        }
+
+//        $return_string = '/**';
+
+////        $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
+//        $class = new \ReflectionClass(self::class);
+//        foreach ($class->getMethods() as $method) {
+//            var_dump($this->methodToPropertyName($method->getName()));
+//            $return_string .= $method->getName();
+////            var_dump($method->getName());
+//        }
+//        foreach ($class->getProperties() as $property) {
+//            $return_string .= $property->getName();
+////            var_dump($method->getName());
+//        }
+//        $return_string .= '*/';
+//        return $return_string;
+//        return var_dump($class->getMethods());
+//        $docblock = $factory->create();
+//        return $docblock->getName();
+
+//        return 'test';
+    }
+
+    private function recursiveFind($needle, $haystack, $name)
+    {
+        foreach ($haystack as $key => $test) {
+            if ($test[$name] === $needle) {
+                return $key;
+            }
+        }
+        return false;
+    }
+
+    public function generateDoc()
+    {
+        $class = new \ReflectionClass(get_called_class());
+        $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
+
+        $doc_comment = $class->getDocComment();
+
+
+        $doc_new[] = "/**";
+
+        if ($doc_comment) {
+            $doc = $factory->create($class);
+            $tags = $doc->getTags();
+            $tags_new = $doc->getTags();
+
+            foreach ($tags as $id => $tag) {
+                if (in_array($tag->getName(), array('property', 'property-read', 'property-write'))) {
+                    unset($tags_new[$id]);
+                }
+            }
+
+            $doc_new[] = " * " . $doc->getSummary();
+            $doc_new[] = " * ";
+            $doc_new[] = " * " . $doc->getDescription();
+            $doc_new[] = " * ";
+
+            foreach ($tags_new as $tag) {
+                $doc_new[] = " * " . $tag->render();
+            }
+        }
+
+        $properties = $this->prepareDoc();
+
+        foreach ($properties as $property) {
+            if (isset($property['read']) && isset($property['write'])) {
+                $doc_new[] = " * " .  '@property ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+            } elseif (isset($property['read'])) {
+                $doc_new[] = " * " . '@property-read ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+            } elseif (isset($property['write'])) {
+                $doc_new[] = " * " . '@property-write ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+            }
+        }
+
+        $doc_new[] = " */";
+
+        $content = file_get_contents($class->getFileName());
+
+        if ($doc_comment) {
+            $content = str_replace($class->getDocComment(), implode(PHP_EOL, $doc_new), $content);
+            file_put_contents($class->getFileName(), $content);
+        } else {
+            $parser = (new ParserFactory)->create(ParserFactory::PREFER_PHP7);
+            try {
+                $stmts = $parser->parse($content);
+                $class_line = 1;
+                foreach ($stmts as $stmt) {
+                    if ($stmt instanceof Namespace_) {
+                        foreach ($stmt as $ns_stmt) {
+                            if ($ns_stmt instanceof Class_) {
+                                $class_line = $ns_stmt->getAttribute('startLine');
+                            }
+                        }
+                    } elseif ($stmt instanceof Class_) {
+                        $class_line = $stmt->getAttribute('startLine');
+                    }
+                }
+
+                $content_lines = explode(PHP_EOL, $content);
+                array_splice($content_lines, $class_line-1, 0, $doc_new);
+                file_put_contents($class->getFileName(), implode(PHP_EOL, $content_lines));
+
+            } catch (Error $e) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 }

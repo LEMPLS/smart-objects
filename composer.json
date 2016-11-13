@@ -4,7 +4,8 @@
     "type": "library",
     "require": {
         "php": "^7.0",
-        "phpdocumentor/reflection-docblock": "^3.1"
+        "phpdocumentor/reflection-docblock": "^3.1",
+        "nikic/php-parser": "^2.1"
     },
     "minimum-stability": "stable",
     "autoload": {
