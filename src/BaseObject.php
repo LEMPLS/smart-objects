@@ -11,6 +11,7 @@ namespace Lempls\SmartObjects;
 
 
 use Lempls\SmartObjects\Exceptions;
+use Lempls\SmartObjects\Annotations\IgnoreDoc;
 use phpDocumentor\Reflection\Type;
 use phpDocumentor\Reflection\Types\Compound;
 use phpDocumentor\Reflection\Types\Mixed;
@@ -72,21 +73,21 @@ class BaseObject
     public function __set($key, $value)
     {
         if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string'); // Stupid instead of typehint, ensures compatability with doctrine proxies
-        $setter = $this->getSetter($key);
+        $setter = self::getSetter($key);
         if ($setter) {
             $this->$setter($value);
         } elseif ($this->propertyExists($key)) {
             if ($this->hasWriteAccess($key)) {
 
-                $annotation = $this->readAnnotation($key, 'var');
+                $annotation = $this->readPropertyAnnotation($key, 'var');
                 if ($annotation === false) {
                     $this->$key = $value;
                     return;
                 }
 
-                $type = $this->readAnnotation($key, 'var')->getType();
+                $type = $this->readPropertyAnnotation($key, 'var')->getType();
                 if ($type instanceof \phpDocumentor\Reflection\Types\Compound) {
-                    foreach ($this->compoundToArray($type) as $t) {
+                    foreach ($this::compoundToArray($type) as $t) {
                         if ($this->setVerifiedProperty($key, $value, $t)) {
                             return;
                         }
@@ -125,7 +126,7 @@ class BaseObject
     }
 
 
-    private function methodToPropertyName($method)
+    private static function methodToPropertyName($method)
     {
         $prefixes = ['set','get','is','has','add','rem'];
         foreach ($prefixes as $prefix) {
@@ -169,7 +170,7 @@ class BaseObject
      * @param mixed $value
      * @return bool Returns true when type corresponds with value
      */
-    private function verifyType(Type $type, $value) : bool
+    private static function verifyType(Type $type, $value) : bool
     {
         if ($type instanceof Object_) {
             if ($type->getFqsen() === null) return true;
@@ -194,10 +195,10 @@ class BaseObject
      * @param string $key
      * @return bool
      */
-    private function hasReadAccess(string $key) : bool
+    private static function hasReadAccess(string $key) : bool
     {
-        if (property_exists($this, $key)) {
-            $tag = $this->readAnnotation($key, 'access');
+        if (property_exists(self::getClass(), $key)) {
+            $tag = self::readPropertyAnnotation($key, 'access');
             if ($tag == null) return true;
 
             $access = $tag->getDescription()->render();
@@ -213,10 +214,10 @@ class BaseObject
      * @param string $key
      * @return bool
      */
-    private function hasWriteAccess(string $key) : bool
+    private static function hasWriteAccess(string $key) : bool
     {
-        if (property_exists($this, $key)) {
-            $tag = $this->readAnnotation($key, 'access');
+        if (property_exists(self::getClass(), $key)) {
+            $tag = self::readPropertyAnnotation($key, 'access');
             if ($tag == null) return true;
 
             $access = $tag->getDescription()->render();
@@ -233,12 +234,28 @@ class BaseObject
      * @param string $annotation
      * @return false|\phpDocumentor\Reflection\DocBlock\Tag
      */
-    protected function readAnnotation(string $property, string $annotation)
+    protected static function readPropertyAnnotation(string $property, string $annotation)
     {
         $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
-        $reflectionProperty = new \ReflectionProperty($this->getClass(), $property);
+        $reflectionProperty = new \ReflectionProperty(self::getClass(), $property);
         if($reflectionProperty->getDocComment() == false) return false;
         $docblock = $factory->create($reflectionProperty->getDocComment());
+        $tag = $docblock->getTagsByName($annotation);
+        if (count($tag) == 0 || !isset($tag[0])) return false;
+        return $tag[0];
+    }
+
+    /**
+     * @param string $property
+     * @param string $annotation
+     * @return false|\phpDocumentor\Reflection\DocBlock\Tag
+     */
+    protected static function readMethodAnnotation(string $method, string $annotation)
+    {
+        $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
+        $reflectionMethod = new \ReflectionMethod(self::getClass(), $method);
+        if($reflectionMethod->getDocComment() == false) return false;
+        $docblock = $factory->create($reflectionMethod->getDocComment());
         $tag = $docblock->getTagsByName($annotation);
         if (count($tag) == 0 || !isset($tag[0])) return false;
         return $tag[0];
@@ -250,7 +267,7 @@ class BaseObject
      * @param Compound $compound
      * @return array
      */
-    private function compoundToArray(Compound $compound) : array
+    private static function compoundToArray(Compound $compound) : array
     {
         $array = explode('|', (string)$compound);
         $return = [];
@@ -311,20 +328,21 @@ class BaseObject
     /**
      * If class has implementer property setter, we will use it
      *
+     * @ignoreDoc
      * @param string $property
      * @return bool|string
      */
-    public function getSetter(string $property)
+    private static function getSetter(string $property)
     {
         try {
-            if ($this->propertyExists($property)) {
-                if (!$this->hasWriteAccess($property)) return false;
+            if (self::propertyExists($property)) {
+                if (!self::hasWriteAccess($property)) return false;
             }
         } catch (\InvalidArgumentException $e) {
 
         };
-        $method = ucfirst($this->camelize($property));
-        if (method_exists($this, 'set' . $method)) {
+        $method = ucfirst(self::camelize($property));
+        if (method_exists(self::getClass(), 'set' . $method)) {
             return 'set' . $method;
         }
         return false;
@@ -333,48 +351,49 @@ class BaseObject
     /**
      * If class has implementer property getter, we will use it
      *
+     * @ignoreDoc
      * @param string $property
      * @return bool|string
      */
-    public function getGetter(string $property)
+    private static function getGetter(string $property)
     {
         try {
-            if ($this->propertyExists($property)) {
-                if (!$this->hasReadAccess($property)) return false;
+            if (self::propertyExists($property)) {
+                if (!self::hasReadAccess($property)) return false;
             }
         } catch (\InvalidArgumentException $e) {
 
         };
-        $method = ucfirst($this->camelize($property));
-        if (method_exists($this, 'get' . $method)) {
+        $method = ucfirst(self::camelize($property));
+        if (method_exists(self::getClass(), 'get' . $method)) {
             return 'get' . $method;
-        } elseif (method_exists($this, 'is' . $method)) {
+        } elseif (method_exists(self::getClass(), 'is' . $method)) {
             return 'is' . $method;
         }
         return false;
     }
 
-    public function getClass()
+    private static function getClass()
     {
         return get_called_class();
     }
 
-    private function propertyExists($property)
+    private static function propertyExists($property)
     {
-        if (property_exists($this->getClass(), $property)) {
+        if (property_exists(self::getClass(), $property)) {
             return true;
-        } elseif (property_exists($this->getClass(), $this->decamelize($property))) {
-            throw new \InvalidArgumentException('Property ' . $property . ' must be in snake_case. (Hint: use ' . $this->decamelize($property) . ' ;) )');
+        } elseif (property_exists(self::getClass(), self::decamelize($property))) {
+            throw new \InvalidArgumentException('Property ' . $property . ' must be in snake_case. (Hint: use ' . self::decamelize($property) . ' ;) )');
         } else {
             throw new \InvalidArgumentException('Property ' . $property . ' not found.');
         }
     }
 
-    private function decamelize($word) {
+    private static function decamelize($word) {
         return strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $word));
     }
 
-    private function camelize($word) {
+    private static function camelize($word) {
         return $word = preg_replace_callback(
             "/(^|_)([a-z])/",
             function($m) { return strtoupper("$m[2]"); },
@@ -382,101 +401,80 @@ class BaseObject
         );
     }
 
-    private function prepareDoc()
+    private static function prepareDoc()
     {
         $class = new \ReflectionClass(get_called_class());
         $properties = [];
 
         foreach ($class->getProperties() as $property) {
-            if (!$property->isPrivate()) {
-                $p = ['name' => $property->getName(), 'type' => null];
-                if ($this->hasReadAccess($property->getName())) {
-                    $p['read'] = true;
+            if (self::readPropertyAnnotation($property->getName(), 'ignoreDoc') === false) {
+                if (!$property->isPrivate()) {
+                    $p = ['name' => $property->getName(), 'type' => null];
+                    if (self::hasReadAccess($property->getName())) {
+                        $p['read'] = true;
+                    }
+                    if (self::hasWriteAccess($property->getName())) {
+                        $p['write'] = true;
+                    }
+                    if (self::readPropertyAnnotation($property->getName(), 'var') !== false) {
+                        $p['type'] = self::readPropertyAnnotation($property->getName(), 'var');
+                    }
+                    $properties[] = $p;
                 }
-                if ($this->hasWriteAccess($property->getName())) {
-                    $p['write'] = true;
-                }
-                if ($this->readAnnotation($property->getName(), 'var') !== false) {
-                    $p['type'] = $this->readAnnotation($property->getName(), 'var');
-                }
-                $properties[] = $p;
             }
         }
 
         foreach ($class->getMethods() as $method) {
-            $computed_property = $this->methodToPropertyName($method->getName());
+            $computed_property = self::methodToPropertyName($method->getName());
             if ($computed_property !== null && !$method->isPrivate()) {
-                $p = ['name' => $computed_property[1], 'type' => null];
                 $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
-                if ($method->getDocComment() !== false) { //try to read @var on setter/getter
-                    $docblock = $factory->create($method->getDocComment());
-                    $tag = $docblock->getTagsByName('var');
-                    if (count($tag) !== 0 && isset($tag[0])) {
-                        $p['type'] = $tag[0];
+                if (self::readMethodAnnotation($method->getName(), 'ignoreDoc') === false) {
+                    $p = ['name' => $computed_property[1], 'type' => null];
+                    if ($method->getDocComment() !== false) { //try to read @var on setter/getter
+                        $docblock = $factory->create($method->getDocComment());
+                        $tag = $docblock->getTagsByName('var');
+                        if (count($tag) !== 0 && isset($tag[0])) {
+                            $p['type'] = $tag[0];
+                        }
                     }
-                }
 
-                if ($computed_property[0] == 'get' || $computed_property[0] == 'is') {
-                    $rf = $this->recursiveFind($computed_property[1], $properties, 'name');
-                    if ($rf === false) {
-                        $p['read'] = true;
-                        $reflectionType = $method->getReturnType();
-                        if($reflectionType !== null) $p['type'] = $reflectionType->__toString();
-                    } else {
-                        $properties[$rf]['read'] = true;
-                        continue;
+                    if ($computed_property[0] == 'get' || $computed_property[0] == 'is') {
+                        $rf = self::recursiveFind($computed_property[1], $properties, 'name');
+                        if ($rf === false) {
+                            $p['read'] = true;
+                            $reflectionType = $method->getReturnType();
+                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                        } else {
+                            $properties[$rf]['read'] = true;
+                            continue;
+                        }
                     }
-                }
-                if ($computed_property[0] == 'set') {
-                    $rf = $this->recursiveFind($computed_property[1], $properties, 'name');
-                    if ($rf === false) {
-                        $p['write'] = true;
-                        $reflectionType = $method->getParameters()[0]->getType();
-                        if($reflectionType !== null) $p['type'] = $reflectionType->__toString();
-                    } else {
-                        $properties[$rf]['write'] = true;
-                        continue;
+                    if ($computed_property[0] == 'set') {
+                        $rf = self::recursiveFind($computed_property[1], $properties, 'name');
+                        if ($rf === false) {
+                            $p['write'] = true;
+                            $reflectionType = $method->getParameters()[0]->getType();
+                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                        } else {
+                            $properties[$rf]['write'] = true;
+                            continue;
+                        }
                     }
+                    $properties[] = $p;
                 }
-                $properties[] = $p;
             }
         }
 
         return $properties;
-
-//        foreach ($properties as $property) {
-//            if (isset($property['read']) && isset($property['write'])) {
-//                echo '@property ' . $property['type'] . ' $' . $property['name'] . '<br>';
-//            } elseif (isset($property['read'])) {
-//                echo '@property-read ' . $property['type'] . ' $' . $property['name'] . '<br>';
-//            } elseif (isset($property['write'])) {
-//                echo '@property-write ' . $property['type'] . ' $' . $property['name'] . '<br>';
-//            }
-//        }
-
-//        $return_string = '/**';
-
-////        $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
-//        $class = new \ReflectionClass(self::class);
-//        foreach ($class->getMethods() as $method) {
-//            var_dump($this->methodToPropertyName($method->getName()));
-//            $return_string .= $method->getName();
-////            var_dump($method->getName());
-//        }
-//        foreach ($class->getProperties() as $property) {
-//            $return_string .= $property->getName();
-////            var_dump($method->getName());
-//        }
-//        $return_string .= '*/';
-//        return $return_string;
-//        return var_dump($class->getMethods());
-//        $docblock = $factory->create();
-//        return $docblock->getName();
-
-//        return 'test';
     }
 
-    private function recursiveFind($needle, $haystack, $name)
+    /**
+     * @param $needle
+     * @param $haystack
+     * @param $name
+     * @return bool|int|string
+     */
+    private static function recursiveFind($needle, $haystack, $name)
     {
         foreach ($haystack as $key => $test) {
             if ($test[$name] === $needle) {
@@ -486,7 +484,7 @@ class BaseObject
         return false;
     }
 
-    public function generateDoc()
+    public static function generateDoc()
     {
         $class = new \ReflectionClass(get_called_class());
         $factory = \phpDocumentor\Reflection\DocBlockFactory::createInstance();
@@ -517,15 +515,15 @@ class BaseObject
             }
         }
 
-        $properties = $this->prepareDoc();
+        $properties = self::prepareDoc();
 
         foreach ($properties as $property) {
             if (isset($property['read']) && isset($property['write'])) {
-                $doc_new[] = " * " .  '@property ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+                $doc_new[] = " * " .  '@property ' . (strlen($property['type']) > 0 ? $property['type'] . ' ' : '') . '$' . $property['name'];
             } elseif (isset($property['read'])) {
-                $doc_new[] = " * " . '@property-read ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+                $doc_new[] = " * " . '@property-read ' . (strlen($property['type']) > 0 ? $property['type'] . ' ' : '') . '$' . $property['name'];
             } elseif (isset($property['write'])) {
-                $doc_new[] = " * " . '@property-write ' . (strlen($property['type']) > 0 ? $property['type']->getType() . ' ' : '') . '$' . $property['name'];
+                $doc_new[] = " * " . '@property-write ' . (strlen($property['type']) > 0 ? $property['type'] . ' ' : '') . '$' . $property['name'];
             }
         }
 
