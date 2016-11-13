@@ -128,16 +128,17 @@ class BaseObject
 
     private static function methodToPropertyName($method)
     {
+        $method = self::decamelize($method);
         $prefixes = ['set','get','is','has','add','rem'];
         foreach ($prefixes as $prefix) {
             if (strpos($method, $prefix) === 0 && strlen($method) > strlen($prefix)) {
                 $name = substr($method, strlen($prefix));
-                $words = preg_split('/(?=[A-Z])/', $name);
+                $words = explode('_', $method);
                 if(!isset($words[0])) return false;
                 unset($words[0]);
                 $name = implode('_', $words);
 
-                return [$prefix, lcfirst($name)];
+                return [$prefix, $name];
             }
         }
     }
@@ -417,7 +418,7 @@ class BaseObject
                         $p['write'] = true;
                     }
                     if (self::readPropertyAnnotation($property->getName(), 'var') !== false) {
-                        $p['type'] = self::readPropertyAnnotation($property->getName(), 'var');
+                        $p['type'] = self::readPropertyAnnotation($property->getName(), 'var')->getType();
                     }
                     $properties[] = $p;
                 }
@@ -443,7 +444,7 @@ class BaseObject
                         if ($rf === false) {
                             $p['read'] = true;
                             $reflectionType = $method->getReturnType();
-                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString() ;
                         } else {
                             $properties[$rf]['read'] = true;
                             continue;
@@ -454,7 +455,7 @@ class BaseObject
                         if ($rf === false) {
                             $p['write'] = true;
                             $reflectionType = $method->getParameters()[0]->getType();
-                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString();
+                            if ($reflectionType !== null) $p['type'] = $reflectionType->__toString() ;
                         } else {
                             $properties[$rf]['write'] = true;
                             continue;
