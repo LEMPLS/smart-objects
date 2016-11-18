@@ -386,7 +386,7 @@ class BaseObject
         } elseif (property_exists(self::getClass(), self::decamelize($property))) {
             throw new \InvalidArgumentException('Property ' . $property . ' must be in snake_case. (Hint: use ' . self::decamelize($property) . ' ;) )');
         } else {
-            throw new \InvalidArgumentException('Property ' . $property . ' not found.');
+            return false;
         }
     }
 
