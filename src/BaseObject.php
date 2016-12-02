@@ -174,7 +174,8 @@ class BaseObject
     private static function verifyType(Type $type, $value) : bool
     {
         if ($type instanceof Object_) {
-            if ($type->getFqsen() === null) return true;
+            if ($type->getFqsen() === null) return true; // TODO : Get fully qualified class name
+            if (!method_exists($value, 'getClass')) return true; // TODO : Get $value::class
             $classname = '\\' . $value->getClass();
             return $type->__toString() === $classname || $type->__toString() === $value->getClass();
         } elseif ($type instanceof Mixed) {
