@@ -92,9 +92,9 @@ class BaseObject
                             return;
                         }
                     }
-                    throw new Exceptions\WrongTypeException('Property' . $key . 'received ' . gettype($value) . ' instead of one of type-hinted');
+                    throw new Exceptions\WrongTypeException(sprintf("Property %s received %s instead of one of type-hinted", $key, gettype($value)));
                 } else if (!$this->setVerifiedProperty($key, $value, $type)) {
-                    throw new Exceptions\WrongTypeException('Property' . $key . 'received ' . gettype($value) . ' instead of type-hinted' . $type);
+                    throw new Exceptions\WrongTypeException(sprintf("Property %s received %s instead of type-hinted %s", $key, gettype($value), $type));
                 }
                 return;
             } else {
