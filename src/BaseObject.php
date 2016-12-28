@@ -44,7 +44,7 @@ class BaseObject
      * @return mixed
      * @throws Exceptions\InvalidAccessException In case of property being protected
      */
-    public function  &__get($key)
+    public function  __get($key)
     {
         if (gettype($key) !== 'string') throw new \InvalidArgumentException('Property name must be string, ' . gettype($key) . 'given.'); // Stupid instead of typehint, ensures compatability with doctrine proxies
         $getter = $this->getGetter($key);
