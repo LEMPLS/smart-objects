@@ -327,6 +327,20 @@ class BaseObject
         return json_encode($this->toArray($exclude));
     }
 
+
+    /**
+     * Set new values from array.
+     *
+     * @param array $values
+     */
+    public function setValues(array $values)
+    {
+        foreach ($values as $key => $value) {
+            $this->__set($key, $value);
+        }
+    }
+
+
     /**
      * If class has implementer property setter, we will use it
      *
