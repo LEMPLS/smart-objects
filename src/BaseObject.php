@@ -111,6 +111,7 @@ class BaseObject
             case 'get': case 'is': $this->__get($name); break;
             case 'has': $this->__isset($name); break;
             case 'add':
+                // TODO : not working
                 if ($this->$name instanceof Doctrine\Common\Collections\ArrayCollection || gettype($this->$name) === 'array') {
                     $this->$name[] = $args[0];
                 };
@@ -177,6 +178,14 @@ class BaseObject
             if ($type->getFqsen() === null) return true; // TODO : Get fully qualified class name
             if (!method_exists($value, 'getClass')) return true; // TODO : Get $value::class
             $classname = '\\' . $value->getClass();
+
+            // TODO : Doctrine returns proxies instead of original entities
+            $proxies      = '\\DoctrineProxies\\__CG__\\';
+            $proxies_pos  = strpos($classname, $proxies);
+            if ($proxies_pos !== false) {
+                $classname = substr($classname, $proxies_pos + strlen($proxies) - 1);
+            }
+
             return $type->__toString() === $classname || $type->__toString() === $value->getClass();
         } elseif ($type instanceof Mixed) {
             return true;
