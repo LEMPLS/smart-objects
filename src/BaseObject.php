@@ -94,7 +94,14 @@ class BaseObject
                     }
                     throw new Exceptions\WrongTypeException(sprintf("Property %s received %s instead of one of type-hinted", $key, gettype($value)));
                 } else if (!$this->setVerifiedProperty($key, $value, $type)) {
-                    throw new Exceptions\WrongTypeException(sprintf("Property %s received %s instead of type-hinted %s", $key, gettype($value), $type));
+
+                    if ($type instanceof Object_) {
+                        $type_str = sprintf("%s [%s]", gettype($value), $value->getClass());
+                    } else {
+                        $type_str = gettype($value);
+                    }
+
+                    throw new Exceptions\WrongTypeException(sprintf("Property %s received %s instead of type-hinted %s", $key, $type_str, $type));
                 }
                 return;
             } else {
