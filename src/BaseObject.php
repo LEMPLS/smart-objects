@@ -204,7 +204,7 @@ class BaseObject
                     break;
                 }
             }
-            return gettype($value) === $type_string;
+            return strtolower(gettype($value)) === strtolower($type_string);
         }
 
     }
