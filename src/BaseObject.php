@@ -11,7 +11,6 @@ namespace Lempls\SmartObjects;
 
 
 use Lempls\SmartObjects\Exceptions;
-use Lempls\SmartObjects\Annotations\IgnoreDoc;
 use phpDocumentor\Reflection\Type;
 use phpDocumentor\Reflection\Types\Compound;
 use phpDocumentor\Reflection\Types\Mixed;
@@ -96,7 +95,8 @@ class BaseObject
                 } else if (!$this->setVerifiedProperty($key, $value, $type)) {
 
                     if ($type instanceof Object_) {
-                        $type_str = sprintf("%s [%s]", gettype($value), $value->getClass());
+                        $class_str = method_exists($value, 'getClass') ? '[' . $value->getClass() . ']' : '';
+                        $type_str  = sprintf("%s %s", gettype($value), $class_str);
                     } else {
                         $type_str = gettype($value);
                     }
@@ -182,6 +182,7 @@ class BaseObject
     private static function verifyType(Type $type, $value) : bool
     {
         if ($type instanceof Object_) {
+            if (!is_object($value) && $value !== null) return false;
             if ($type->getFqsen() === null) return true; // TODO : Get fully qualified class name
             if (!method_exists($value, 'getClass')) return true; // TODO : Get $value::class
             $classname = '\\' . $value->getClass();
@@ -342,23 +343,6 @@ class BaseObject
     {
         return json_encode($this->toArray($exclude));
     }
-
-
-//    /**
-//     * Set new values from array.
-//     *
-//     * @param array $values
-//     * @param bool  $allow_empty_strings
-//     */
-//    public function setValues(array $values, bool $allow_empty_strings = true)
-//    {
-//        foreach ($values as $key => $value) {
-//            if (!$allow_empty_strings && $value === "") {
-//                continue;
-//            }
-//            $this->__set($key, $value);
-//        }
-//    }
 
 
     /**
