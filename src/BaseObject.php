@@ -346,6 +346,23 @@ class BaseObject
 
 
     /**
+     * Set new values from array.
+     *
+     * @param array $values
+     * @param bool  $allow_empty_strings
+     */
+    public function setValues(array $values, bool $allow_empty_strings = true)
+    {
+        foreach ($values as $key => $value) {
+            if (!$allow_empty_strings && $value === "") {
+                continue;
+            }
+            $this->__set($key, $value);
+        }
+    }
+
+
+    /**
      * If class has implementer property setter, we will use it
      *
      * @ignoreDoc
