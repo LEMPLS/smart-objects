@@ -365,7 +365,6 @@ class BaseObject
     /**
      * If class has implementer property setter, we will use it
      *
-     * @ignoreDoc
      * @param string $property
      * @return bool|string
      */
@@ -388,7 +387,6 @@ class BaseObject
     /**
      * If class has implementer property getter, we will use it
      *
-     * @ignoreDoc
      * @param string $property
      * @return bool|string
      */
